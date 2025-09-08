@@ -1,0 +1,23 @@
+[project]
+name = "kjvsimple"
+version = "1.0.0"
+description = "A terminal-based King James Bible reader with search, navigation, and verse highlighting."
+license = "CC0-1.0"
+readme = "README.md"
+requires-python = ">=3.7"
+keywords = ["bible", "kjv", "terminal", "curses", "reader", "cli"]
+
+[project.urls]
+Homepage = "https://github.com/lggcs/kjvsimple"
+Repository = "https://github.com/lggcs/kjvsimple"
+
+[project.optional-dependencies]
+windows = ["windows-curses>=2.3.0"]
+clipboard = ["pyperclip>=1.8.2"]
+
+[project.scripts]
+kjvreader = "kjvsimple.main:main"
+
+[build-system]
+requires = ["setuptools>=77.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
