@@ -1,0 +1,51 @@
+name: Secure Python Wheel Build
+
+on:
+  push:
+    branches: [ publish ]
+  pull_request:
+    branches: [ publish ]
+  workflow_dispatch:  # manual trigger
+  schedule:
+    - cron: "0 6 * * 1"  # every Monday at 06:00 UTC
+
+permissions:
+  contents: read  # minimal permissions
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11  # v4.1.6
+
+      - name: Set up Python
+        uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d  # v5.1.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
+      - name: Install security tools
+        run: pip install pip-audit
+
+      - name: Run dependency vulnerability scan
+        run: pip-audit || true  # don't fail build yet, but log issues
+
+      - name: Install build tools
+        run: pip install build
+
+      - name: Build wheel and sdist
+        run: python -m build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808  # v4.3.3
+        with:
+          name: dist-${{ matrix.python-version }}
+          path: dist/*
+          retention-days: 30
