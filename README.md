@@ -10,3 +10,8 @@ Bookmarks are saved to `".kjvsimple_favorites.json`. Some sample bookmarks are i
 * Python3
 * pyperclip (optional, to use copy to clipboard functionality)
 * windows-curses (if on Windows)
+
+
+### Screenshot
+
+![john 3 and search](https://i.postimg.cc/WzWbfZ2Z/2025-09-08-093355-1366x768-scrot.png)
