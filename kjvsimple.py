@@ -10,13 +10,6 @@ import sys
 import time
 from collections import defaultdict, OrderedDict
 
-CP_BORDER = 1
-CP_TITLE = 2
-CP_FOCUS = 3
-CP_DIM = 4
-CP_HL = 5
-CP_CURSOR = 6
-
 ALLOWED_COLORS = [
     ("Yellow", curses.COLOR_YELLOW),
     ("Cyan", curses.COLOR_CYAN),
@@ -27,7 +20,21 @@ ALLOWED_COLORS = [
     ("White", curses.COLOR_WHITE),
 ]
 
+CP_BORDER = 1
+CP_TITLE = 2
+CP_FOCUS = 3
+CP_DIM = 4
+CP_HL = 5
+CP_CURSOR = 6
+CP_CURSOR_HL = 7  # Cursor on highlighted verse (white on yellow)
+# Favorite base pairs start at 10, cursor-fav pairs start at 20
+FAV_PAIRS_START = 10
+CURSOR_FAV_PAIRS_START = 20
+
 FAV_FILE = os.path.expanduser(".kjv_favorites.json")
+
+# Map from curses color constant to index in ALLOWED_COLORS
+COLOR_ID_TO_INDEX = {color_id: i for i, (_, color_id) in enumerate(ALLOWED_COLORS)}
 
 def init_colors():
     curses.start_color()
@@ -38,6 +45,11 @@ def init_colors():
     curses.init_pair(CP_DIM, curses.COLOR_BLUE, -1)
     curses.init_pair(CP_HL, curses.COLOR_YELLOW, -1)
     curses.init_pair(CP_CURSOR, curses.COLOR_BLACK, curses.COLOR_WHITE)
+    curses.init_pair(CP_CURSOR_HL, curses.COLOR_WHITE, curses.COLOR_YELLOW)
+    # Initialize favorite color pairs
+    for i, (_, color_id) in enumerate(ALLOWED_COLORS):
+        curses.init_pair(FAV_PAIRS_START + i, curses.COLOR_BLACK, color_id)
+        curses.init_pair(CURSOR_FAV_PAIRS_START + i, curses.COLOR_WHITE, color_id)
 
 def load_chapter_lines(bible, book_key, chapter_num, width):
     chapter = bible[book_key].get(chapter_num, [])
@@ -766,6 +778,7 @@ def reader(stdscr, bible, book_key, chapter_num):
 
         help_line = "Arrows: scroll  PgUp/PgDn  Home/End  ←/→: ch  B: book  c: chapter  v: jump  /: search  h: highlight  f: favorite  d: delete  b: bookmarks  q: quit"
 
+        cursor_verse_num = line_to_verse[cursor_line] if 0 <= cursor_line < len(line_to_verse) else None
         for row in range(inner_h):
             y = 2 + row
             clear_interior_line(win, y, 2, inner_w)
@@ -774,14 +787,46 @@ def reader(stdscr, bible, book_key, chapter_num):
                 line = content_lines[i]
                 vnum = line_to_verse[i]
                 attr = curses.A_NORMAL
-                if highlight_enabled and vnum is not None and vnum in highlight_set:
-                    attr = curses.color_pair(CP_HL) | curses.A_BOLD
-                if vnum is not None and (book_key, chapter_num, vnum) in favorites:
-                    color_id = favorites[(book_key, chapter_num, vnum)]["color"]
-                    curses.init_pair(100 + color_id, curses.COLOR_BLACK, color_id)
-                    attr = curses.color_pair(100 + color_id)
-                if i == cursor_line:
+
+                # Check the state of this line
+                is_cursor = cursor_verse_num is not None and vnum == cursor_verse_num and vnum is not None
+                is_highlighted = highlight_enabled and vnum is not None and vnum in highlight_set
+                fav_key = (book_key, chapter_num, vnum)
+                is_fav = vnum is not None and fav_key in favorites
+
+                # Determine color index if favorited
+                fav_pair_idx = -1
+                if is_fav:
+                    fav_color_id = favorites[fav_key]["color"]
+                    fav_idx = COLOR_ID_TO_INDEX[fav_color_id]
+                    fav_pair_idx = FAV_PAIRS_START + fav_idx
+
+                # Apply colors in priority order
+                if is_cursor and is_highlighted and is_fav:
+                    # Cursor on highlighted + favorited - show favorite color with white bold text
+                    color_pair = CURSOR_FAV_PAIRS_START + (fav_pair_idx - FAV_PAIRS_START)
+                    attr = curses.color_pair(color_pair) | curses.A_BOLD
+                elif is_cursor and is_fav:
+                    # Cursor on favorited - white on favorite color
+                    color_pair = CURSOR_FAV_PAIRS_START + (fav_pair_idx - FAV_PAIRS_START)
+                    attr = curses.color_pair(color_pair)
+                elif is_cursor and is_highlighted:
+                    # Cursor on highlighted - white on yellow
+                    attr = curses.color_pair(CP_CURSOR_HL)
+                elif is_cursor:
+                    # Cursor on normal verse - black on white
                     attr = curses.color_pair(CP_CURSOR)
+                elif is_highlighted and is_fav:
+                    # Highlighted + favorited (no cursor) - black on favorite color with bold
+                    attr = curses.color_pair(fav_pair_idx) | curses.A_BOLD
+                elif is_highlighted:
+                    # Highlighted only - yellow bold
+                    attr = curses.color_pair(CP_HL) | curses.A_BOLD
+                elif is_fav:
+                    # Favorite only - black on favorite color
+                    attr = curses.color_pair(fav_pair_idx)
+                # else: normal text (no attributes)
+
                 try:
                     win.addnstr(y, 2, line, inner_w, attr)
                 except curses.error:
@@ -846,7 +891,16 @@ def reader(stdscr, bible, book_key, chapter_num):
                 highlight_set = set()
                 cursor_line = 0
         elif ch == ord('h'):
-            highlight_enabled = not highlight_enabled
+            verse_num = line_to_verse[cursor_line]
+            if verse_num is not None:
+                if verse_num in highlight_set:
+                    highlight_set.remove(verse_num)
+                else:
+                    highlight_set.add(verse_num)
+                    highlight_enabled = True
+                # If highlight_set becomes empty, disable highlighting
+                if not highlight_set:
+                    highlight_enabled = False
         elif ch == ord('v'):
             jump = jump_to_reference_prompt(stdscr, bible, book_key, chapter_num)
             if jump:
